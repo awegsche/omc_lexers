@@ -1,7 +1,7 @@
 from pygments.lexer import RegexLexer
 from pygments.token import *
 
-class CustomLexer(RegexLexer):
+class MadLexer(RegexLexer):
     name = "MadX"
     aliases = ['mad', 'madx']
     filenames = ['*.mad', '*.seq']
