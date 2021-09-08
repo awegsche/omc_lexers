@@ -5,6 +5,7 @@ from setuptools import setup, find_packages
 entry_points = '''
 [pygments.lexers]
 madx=omc_lexers:MadLexer
+mad=omc_lexers:MadLexer
 '''
 
 setup(
