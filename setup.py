@@ -10,7 +10,7 @@ mad=omc_lexers:MadLexer
 
 setup(
     name='omc-lexers',
-    version='1.0.0',
+    version='0.1.0',
     description='Some OMC related pygments lexers',
     author='Andreas Wegscheider',
     author_email='',
@@ -23,20 +23,13 @@ setup(
     zip_safe=True,
     license='MIT License',
     classifiers=[
-        'Development Status :: 5 - Production/Stable',
+        'Development Status :: 1 - Planning',
         'Environment :: Console',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.2',
-        'Programming Language :: Python :: 3.3',
-        'Programming Language :: Python :: 3.4',
-        'Topic :: Internet :: WWW/HTTP :: Dynamic Content',
+        'Programming Language :: Python :: 3 :: Only'
+        'Topic :: Scientific/Engineering :: Physics',
         'Topic :: Software Development :: Libraries :: Python Modules',
-        'Topic :: Text Processing :: Filters',
-        'Topic :: Text Processing :: Markup :: HTML'
     ]
 )
