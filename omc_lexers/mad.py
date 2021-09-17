@@ -22,7 +22,7 @@ MAD_PROP_LIST = [
 class MadLexer(RegexLexer):
     name = "MadX"
     aliases = ['mad', 'madx']
-    filenames = ['*.mad', '*.seq']
+    filenames = ['*.mad', '*.madx', '*.seq']
 
     tokens = {
         'strings': [
