@@ -1,24 +1,97 @@
 from pygments.lexer import RegexLexer, bygroups, include
 from pygments.token import *
 
+# for general cmds (we don't care if the attributes are correct)
+# this should be absorbed over time to a more detailled approach
 MAD_CMD_LIST = [
-    "twiss",
-    "call",
-    "use",
-    "option",
-    "beam",
-    "title",
+    "TWISS",
+    "TITLE",
+    "VALUE",
+    "HELP",
+    "SHOW"
 ]
 
 MAD_PROP_LIST = [
-    "sequence",
-    "file",
-    "particle",
-    "energy",
-    "kbunch",
-    "npart",
-    "bv",
+    "SEQUENCE",
+    "FILE",
+    "PARTICLE",
+    "ENERGY",
+    "KBUNCH",
+    "NPART",
+    "BV",
 ]
+
+MAD_OPTIONS = [
+    "INFO",
+    "ECHO(MACRO)?",
+    "VERBOSE",
+    "WARN",
+    "TRACE",
+    "VERIFY",
+    "TELL",
+    "RESET",
+    "NO_FATAL_STOP",
+    "KEEP_EXP_MOVE",
+    "RBARC",
+    "THIN_FOC",
+    "BBORBIT",
+    "SYMPL",
+    "TWISS_PRINT",
+    "THREADER"
+]
+
+MADX_BUILTIN_FN = [
+    "SQRT",
+    "LOG",
+    "LOG10",
+    "EXP",
+    "SIN",
+    "COS",
+    "TAN",
+    "ASIN",
+    "ACOS",
+    "ATAN",
+    "SINH",
+    "COSH",
+    "TANH",
+    "SINC",
+    "ABS",
+    "ERF",
+    "ERFC",
+    "FLOOR",
+    "CEIL",
+    "ROUND",
+    "FRAC",
+    "RANF",
+    "T?GAUSS"
+]
+
+MAD_KEYWORD = [
+    "IF",
+    "ELSE",
+    "WHILE",
+    "TRUE",
+    "FALSE",
+]
+
+def add_command(name, aliases=None, token=Name.Class, no_scope=False):
+    if aliases is None:
+        aliases = [name]
+    if no_scope:
+        return (f'(?i)\\b({"|".join(aliases)})\\b', token)
+    else :
+        return (f'(?i)\\b({"|".join(aliases)})\\b', token, name)
+
+def make_command(attrs):
+    return [
+        include('strings'),
+        (r';', Text, '#pop'),
+        (f'(?i)\\b({"|".join(attrs)})', Name.Attribute),
+        include('punct'),
+        ('.', Text),
+        #(r'[^;]', Text),
+    ]
+
 class MadLexer(RegexLexer):
     name = "MadX"
     aliases = ['mad', 'madx']
@@ -26,18 +99,80 @@ class MadLexer(RegexLexer):
 
     tokens = {
         'strings': [
-            (r"'.*'", String),
-            (r'".*"', String),
+            (r"'.*?'", String),
+            (r'".*?"', String),
         ],
-        'root': [
-            include('strings'),
-            (f'\\b({"|".join(MAD_CMD_LIST)})\\b', Name.Class, 'twiss'),
-            (f'\\b({"|".join([x.upper() for x in MAD_CMD_LIST])})\\b', Name.Class, 'twiss'),
+        'punct': [
+            # skip any unknown identifier
+            ("[\\w+\\.]", Text),
+            # punctuation and operators
+            ("[,;\\(\\)]\\s*", Text),
+            ("\\s*[\\+\\-\\*\\/]\\s*", Text),
+            ("\\s*:?=\\s*", Operator),
+            ("=", Operator),
+        ],
+        'root_cmds': [
+            # general fall back highlighting, will vanish over time
+            (f'(?i)\\b({"|".join(MAD_CMD_LIST)})\\b', Name.Class, 'twiss'),
+            (f'(?i)\\b({"|".join(MADX_BUILTIN_FN)})\\b', Name.Class),
+            # the MADX commands
+            add_command('option'),
+            add_command('set'),
+            add_command('select'),
+            add_command('use'),
+            add_command('system', ['system', 'title'], no_scope=True),
+            add_command('assign'),
+            add_command('call', aliases=["CALL", "REMOVEFILE", "READTABLE"]),
+            add_command('print'),
+            add_command('printf'),
+            add_command('renamefile'),
+            add_command('copyfile'),
+            add_command('create'),
+            add_command('delete'),
+            add_command('readmytable', aliases=["READMYTABLE", "WRITE"]),
+            add_command('setvars', aliases=["SETVARS", "FILL", "SHRINK"]),
+            add_command('setvars_lin'),
+            add_command('beam'),
+            add_command('resbeam'),
+            # comments
             (r'!.*$', Comment),
             (r'//.*$', Comment),
-            ("\\bexec", Name.Class, "exec"),
-            ("\\b(if|else)", Keyword),
             (r'/\*', Comment.Multiline, 'comment'),
+            # the exec command
+            ("\\bexec", Name.Class, "exec"),
+            # keywords
+            add_command("kw", aliases=MAD_KEYWORD, token=Keyword, no_scope=True),
+            include('punct'),
+            # if nothing else found, skip until end of line
+            ('.*\\n', Text),
+        ],
+        'root': [
+            # let's add strings here. there shouldn't be any root-level strings but you never know
+            include('strings'),
+            # skip whitespaces if indented line
+            ("\\s+", Text),
+            # macro has to be caught as soon as possible because of ambibuous syntax
+            ("(?i)(\\w+)\\s*(\\(.*\\):\\s*)(MACRO)(\\s*=\\s*{)", bygroups(Name.Function, Text, Keyword, Text), 'macro'),
+            # `root_cmds` is refactored out to be used in macro's body
+            include('root_cmds'),
+            # if stop appears in root, the rest of the file is unreachable
+            ("\\b(stop|exit|quit)\\b\\s*;", Error, 'stop'),
+        ],
+        'stop': [
+            # if the stop command was nested, jump out of the `stop` scope at the end of the block
+            # this is to prevent that a stop in an inactive branch disables highlighting for the rest of the file
+            ('}', Text, '#pop'),
+            #('\\n', Text),
+            (".*\\n", Comment)
+        ],
+        'macro': [
+            # let's add strings here. there shouldn't be any root-level strings but you never know
+            include('strings'),
+            # skip whitespaces if indented line
+            ("\\s+", Text),
+            ('}', Text, '#pop'),
+            #("\\n", Punctuation, '#push'),
+            include('root_cmds'),
         ],
          'comment': [
             (r'[^*/]', Comment.Multiline),
@@ -45,16 +180,61 @@ class MadLexer(RegexLexer):
             (r'\*/', Comment.Multiline, '#pop'),
             (r'[*/]', Comment.Multiline)
         ],
-        'twiss': [
-            include('strings'),
-            (r';', Text, '#pop'),
-            (f'\\b({"|".join(MAD_PROP_LIST)})', Name.Attribute),
-            (f'\\b({"|".join([x.upper() for x in MAD_PROP_LIST])})', Name.Attribute),
-            (r'[^;]', Text),
-        ],
         'exec': [
             ('\\w+', Name.Function),
             ('\\(', Text, "#pop"),
-        ]
-        
+            (',\\s*', Text),
+        ],
+        'twiss': make_command(MAD_PROP_LIST),
+        'option': make_command(MAD_OPTIONS),
+        'set': make_command(["FORMAT", "SEQUENCE"]),
+        'use': make_command(["SEQUENCE",
+                             "PERIOD",
+                             "SURVEY",
+                             "RANGE",
+                             ]),
+        'select': make_command(["FLAG",
+                                "RANGE",
+                                "CLASS",
+                                "PATTERN",
+                                "SEQUENCE",
+                                "FULL",
+                                "CLEAR",
+                                "COLUMN",
+                                "SLICE",
+                                "THICK",
+                                "STEP",
+                                "AT",
+                                # flag options:
+                                "SEQEDIT",
+                                "ERROR",
+                                "MAKETHIN",
+                                "SECTORMAP",
+                                "SAVE",
+                                "INTERPOLATE",
+                                "TWISS",
+                             ]),
+        'assign': make_command(["ECHO", "TRUNCATE"]),
+        'call': make_command(["FILE"]),
+        'print': make_command(["TEXT"]),
+        'printf': make_command(["TEXT", "VALUE"]),
+        'renamefile': make_command(["FILE", "TO"]),
+        'copyfile': make_command(["FILE", "TO", "APPEND"]),
+        'create': make_command(["TABLE", "COLUMN"]),
+        'delete': make_command(["TABLE", "SEQUENCE"]),
+        'readmytable': make_command(["TABLE", "FILE"]),
+        'setvars': make_command(["TABLE", "ROW"]),
+        'setvars_lin': make_command(["TABLE", "ROW1", "ROW2", "PARAM"]),
+        'beam': make_command([
+            'particle', 'mass', 'charge',
+            'energy', 'pc', 'gamma', 'beta', 'brho',
+            'exn?', 'eyn?',
+            'et', 'sig[te]',
+            'kbunch', 'npart', 'bcurrent',
+            'bunched', 'radiate', 'bv', 
+            'sequence'
+            # particle options:
+            'positron', 'electron', 'proton', 'antiproton', 'posmuon', 'negmuon', 'ion'
+        ]),
+        'resbeam': make_command(["sequence"]),
     }
