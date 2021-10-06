@@ -69,6 +69,7 @@ MADX_BUILTIN_FN = [
 MAD_KEYWORD = [
     "IF",
     "ELSE",
+    "ELSEIF",
     "WHILE",
     "TRUE",
     "FALSE",
@@ -86,7 +87,7 @@ def make_command(attrs):
     return [
         include('strings'),
         (r';', Text, '#pop'),
-        (f'(?i)\\b({"|".join(attrs)})', Name.Attribute),
+        (f'(?i)\\b({"|".join(attrs)})(\\s*=\\s*\\w+)?', bygroups(Name.Attribute, Text)),
         include('punct'),
         ('.', Text),
         #(r'[^;]', Text),
@@ -122,18 +123,22 @@ class MadLexer(RegexLexer):
             add_command('use'),
             add_command('system', ['system', 'title'], no_scope=True),
             add_command('assign'),
-            add_command('call', aliases=["CALL", "REMOVEFILE", "READTABLE"]),
+            add_command('call', aliases=["CALL", "REMOVEFILE"]),
             add_command('print'),
             add_command('printf'),
             add_command('renamefile'),
+            add_command('chdir'),
             add_command('copyfile'),
             add_command('create'),
             add_command('delete'),
-            add_command('readmytable', aliases=["READMYTABLE", "WRITE"]),
-            add_command('setvars', aliases=["SETVARS", "FILL", "SHRINK"]),
+            add_command('readmytable', aliases=["READMYTABLE", "WRITE", "READTABLE"]),
+            add_command('fill', aliases=["FILL", "SHRINK"]),
+            add_command('setvars'),
+            add_command('fill_knob'),
             add_command('setvars_lin'),
             add_command('beam'),
             add_command('resbeam'),
+            ("SEQEDIT", Name.Class, 'seqedit'),
             # comments
             (r'!.*$', Comment),
             (r'//.*$', Comment),
@@ -153,6 +158,7 @@ class MadLexer(RegexLexer):
             ("\\s+", Text),
             # macro has to be caught as soon as possible because of ambibuous syntax
             ("(?i)(\\w+)\\s*(\\(.*\\):\\s*)(MACRO)(\\s*=\\s*{)", bygroups(Name.Function, Text, Keyword, Text), 'macro'),
+            ("(?i)(\\w+)\\s*(MACRO)(\\s*=\\s*{)", bygroups(Name.Function, Keyword, Text), 'macro'),
             # `root_cmds` is refactored out to be used in macro's body
             include('root_cmds'),
             # if stop appears in root, the rest of the file is unreachable
@@ -173,6 +179,7 @@ class MadLexer(RegexLexer):
             ('}', Text, '#pop'),
             #("\\n", Punctuation, '#push'),
             include('root_cmds'),
+            (".*?;", Text),
         ],
          'comment': [
             (r'[^*/]', Comment.Multiline),
@@ -223,7 +230,9 @@ class MadLexer(RegexLexer):
         'create': make_command(["TABLE", "COLUMN"]),
         'delete': make_command(["TABLE", "SEQUENCE"]),
         'readmytable': make_command(["TABLE", "FILE"]),
-        'setvars': make_command(["TABLE", "ROW"]),
+        'fill': make_command(["TABLE", "ROW"]),
+        'setvars': make_command(["TABLE", "ROW", "KNOB", "CONST", "NOAPPEND"]),
+        'fill_knob': make_command(["TABLE", "ROW", "KNOB", "SCALE"]),
         'setvars_lin': make_command(["TABLE", "ROW1", "ROW2", "PARAM"]),
         'beam': make_command([
             'particle', 'mass', 'charge',
@@ -231,10 +240,43 @@ class MadLexer(RegexLexer):
             'exn?', 'eyn?',
             'et', 'sig[te]',
             'kbunch', 'npart', 'bcurrent',
-            'bunched', 'radiate', 'bv', 
-            'sequence'
+            'bunched', 'radiate', 'bv',
+            'sequence',
             # particle options:
             'positron', 'electron', 'proton', 'antiproton', 'posmuon', 'negmuon', 'ion'
         ]),
         'resbeam': make_command(["sequence"]),
+        'chdir': make_command(["dir"]),
+        'seqedit': [
+            include('strings'),
+            ("ENDEDIT", Name.Class, '#pop'),
+            (f'(?i)\\b(SEQUENCE)(\\s*=\\s*\\w+)?', bygroups(Name.Attribute, Text)),
+            add_command('flatten', no_scope=True),
+            add_command('reflect', no_scope=True),
+            add_command('cycle'),
+            add_command('install'),
+            add_command('move'),
+            add_command('remove'),
+            add_command('replace'),
+            include('punct'),
+            ('.', Text),
+            ("\\s+", Text),
+        ],
+        'cycle': make_command(["START"]),
+        'install': make_command([
+            "element", "class", "at", "from",
+            "selected"
+        ]),
+        'move': make_command([
+            "element", "by", "to", "from",
+            "selected"
+        ]),
+        'remove': make_command([
+            "element",
+            "selected"
+        ]),
+        'replace': make_command([
+            "element", "by",
+            "selected"
+        ]),
     }
