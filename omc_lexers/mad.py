@@ -144,7 +144,7 @@ class MadLexer(RegexLexer):
             (r'//.*$', Comment),
             (r'/\*', Comment.Multiline, 'comment'),
             # the exec command
-            ("\\bexec", Name.Class, "exec"),
+            ("(?i)\\bexec", Name.Class, "exec"),
             # keywords
             add_command("kw", aliases=MAD_KEYWORD, token=Keyword, no_scope=True),
             include('punct'),
@@ -159,10 +159,10 @@ class MadLexer(RegexLexer):
             # macro has to be caught as soon as possible because of ambibuous syntax
             ("(?i)(\\w+)\\s*(\\(.*\\):\\s*)(MACRO)(\\s*=\\s*{)", bygroups(Name.Function, Text, Keyword, Text), 'macro'),
             ("(?i)(\\w+)\\s*(MACRO)(\\s*=\\s*{)", bygroups(Name.Function, Keyword, Text), 'macro'),
+            # if stop appears in root, the rest of the file is unreachable
+            ("\\s*(?i)\\b(stop|exit|quit)\\b\\s*;", Comment, 'stop'),
             # `root_cmds` is refactored out to be used in macro's body
             include('root_cmds'),
-            # if stop appears in root, the rest of the file is unreachable
-            ("\\b(stop|exit|quit)\\b\\s*;", Error, 'stop'),
         ],
         'stop': [
             # if the stop command was nested, jump out of the `stop` scope at the end of the block
