@@ -1,26 +1,10 @@
 from pygments.lexer import RegexLexer, bygroups, include
 from pygments.token import *
 
-# for general cmds (we don't care if the attributes are correct)
-# this should be absorbed over time to a more detailled approach
-MAD_CMD_LIST = [
-    "TWISS",
-    "TITLE",
-    "VALUE",
-    "HELP",
-    "SHOW"
-]
-
-MAD_PROP_LIST = [
-    "SEQUENCE",
-    "FILE",
-    "PARTICLE",
-    "ENERGY",
-    "KBUNCH",
-    "NPART",
-    "BV",
-]
-
+# options, following the pattern
+# ```
+# option, flag;
+# ```
 MAD_OPTIONS = [
     "INFO",
     "ECHO(MACRO)?",
@@ -40,6 +24,7 @@ MAD_OPTIONS = [
     "THREADER"
 ]
 
+# built-in mathematical functions
 MADX_BUILTIN_FN = [
     "SQRT",
     "LOG",
@@ -66,6 +51,7 @@ MADX_BUILTIN_FN = [
     "T?GAUSS"
 ]
 
+# control flow keywords
 MAD_KEYWORD = [
     "IF",
     "ELSE",
@@ -75,6 +61,11 @@ MAD_KEYWORD = [
     "FALSE",
 ]
 
+# most madx commands follow the structure
+# ```
+# COMMAND, BOOL_FLAG, VALUE_FLAG=value;
+# ```
+# the following two functions register those commands and their respective scope
 def add_command(name, aliases=None, token=Name.Class, no_scope=False):
     if aliases is None:
         aliases = [name]
@@ -87,10 +78,34 @@ def make_command(attrs):
     return [
         include('strings'),
         (r';', Text, '#pop'),
-        (f'(?i)\\b({"|".join(attrs)})(\\s*=\\s*\\w+)?', bygroups(Name.Attribute, Text)),
+        (f'(?i)\\b({"|".join(attrs)})(\\s*:?=\\s*[^,;]+)?', bygroups(Name.Attribute, Text)),
         include('punct'),
         ('.', Text),
         #(r'[^;]', Text),
+    ]
+
+# MADX accelerator elements are defined as
+# ```
+# label: TYPE, attrs;
+# ```
+# the following two functions register those element definitions and their respective scope
+def add_element(name, no_scope=False, scope_name=None, token=Name.Class, aliases=None):
+    if scope_name is None:
+        scope_name = name
+    matcher = name
+    if aliases is not None:
+        matcher = f"{'|'.join(aliases)}"
+    if no_scope:
+        return (f"(\\w+)(\\s*:\\s*)(?i)({matcher})", bygroups(Name.Variable, Text, token))
+    return (f"(\\w+)(\\s*:\\s*)(?i)({matcher})", bygroups(Name.Variable, Text, token), scope_name)
+
+def make_element(attrs):
+    return [
+        include('strings'),
+        (';', Text, '#pop'),
+        (f'(\\s*)(?i)({"|".join(attrs)})(\\s*:?=\\s*[^,;]+)', bygroups(Text, Name.Attribute, Text)),
+        (',', Text),
+        ('[^,;]+', Text),
     ]
 
 class MadLexer(RegexLexer):
@@ -108,14 +123,14 @@ class MadLexer(RegexLexer):
             ("[\\w+\\.]", Text),
             # punctuation and operators
             ("[,;\\(\\)]\\s*", Text),
-            ("\\s*[\\+\\-\\*\\/]\\s*", Text),
+            ("\\s*[+\\-*\\/]\\s*", Operator),
+            ("\\s*[><]=?\\s*", Operator),
             ("\\s*:?=\\s*", Operator),
             ("=", Operator),
         ],
         'root_cmds': [
             # general fall back highlighting, will vanish over time
-            (f'(?i)\\b({"|".join(MAD_CMD_LIST)})\\b', Name.Class, 'twiss'),
-            (f'(?i)\\b({"|".join(MADX_BUILTIN_FN)})\\b', Name.Class),
+            (f'(?i)\\b({"|".join(MADX_BUILTIN_FN)})(\\()', bygroups(Name.Class, Text)),
             # the MADX commands
             add_command('option'),
             add_command('set'),
@@ -138,6 +153,39 @@ class MadLexer(RegexLexer):
             add_command('setvars_lin'),
             add_command('beam'),
             add_command('resbeam'),
+            add_command('twiss'),
+
+            # element definitions
+            add_element('marker', no_scope=True),
+            add_element('rbend'),
+            add_element('drift'),
+            add_element('sbend'),
+            add_element('rbend'),
+            add_element('dipedge'),
+            add_element('quadrupole'),
+            add_element('sextupole'),
+            add_element('octupole'),
+            add_element('multipole'),
+            add_element('solenoid'),
+            add_element('nllens'),
+            add_element('[hv]kicker', scope_name="hvkicker"),
+            add_element('kicker'),
+            add_element('save_state'),
+            add_element('rfcavity'),
+            add_element('twcavity'),
+            add_element('crabcavity'),
+            add_element('rfmultipole'),
+            add_element('[hv]acdipole', scope_name="hvacdipole"),
+            add_element('elseparator'),
+            add_element('monitor', scope_name="monitor", aliases=["[hv]?monitor", "instrument", "placeholder"]),
+            add_element('collimator'),
+            add_element('[er]collimator', scope_name="ercollimator"),
+            add_element('beambeam'),
+            add_element('matrix'),
+            add_element('[xys]rotation', scope_name="rotation"),
+            add_element('translation'),
+            # for everything else that matches the assignment pattern:
+            add_element('\\w+', no_scope=True, token=Name.Variable),
             ("SEQEDIT", Name.Class, 'seqedit'),
             # comments
             (r'!.*$', Comment),
@@ -149,6 +197,7 @@ class MadLexer(RegexLexer):
             add_command("kw", aliases=MAD_KEYWORD, token=Keyword, no_scope=True),
             include('punct'),
             # if nothing else found, skip until end of line
+            ('.*?\\)', Text),
             ('.*\\n', Text),
         ],
         'root': [
@@ -160,7 +209,7 @@ class MadLexer(RegexLexer):
             ("(?i)(\\w+)\\s*(\\(.*\\):\\s*)(MACRO)(\\s*=\\s*{)", bygroups(Name.Function, Text, Keyword, Text), 'macro'),
             ("(?i)(\\w+)\\s*(MACRO)(\\s*=\\s*{)", bygroups(Name.Function, Keyword, Text), 'macro'),
             # if stop appears in root, the rest of the file is unreachable
-            ("\\s*(?i)\\b(stop|exit|quit)\\b\\s*;", Comment, 'stop'),
+            ("\\s*(?i)\\b(stop|exit|quit|return)\\b\\s*;", Comment, 'stop'),
             # `root_cmds` is refactored out to be used in macro's body
             include('root_cmds'),
         ],
@@ -192,7 +241,6 @@ class MadLexer(RegexLexer):
             ('\\(', Text, "#pop"),
             (',\\s*', Text),
         ],
-        'twiss': make_command(MAD_PROP_LIST),
         'option': make_command(MAD_OPTIONS),
         'set': make_command(["FORMAT", "SEQUENCE"]),
         'use': make_command(["SEQUENCE",
@@ -278,5 +326,114 @@ class MadLexer(RegexLexer):
         'replace': make_command([
             "element", "by",
             "selected"
+        ]),
+        'twiss': make_command([
+            "SEQUENCE", "LINE", "RANGE",
+            "DELTAP",
+            "CHROM",
+            "CENTRE", "TOLERANCE",
+            "FILE",
+            "(NO)?TABLE",
+            "RMATRIX", "SECTORMAP",
+            "SECTORTABLE", "SECTORFILE",
+            "SECTORPURE",
+            "EIGENVECTOR", "EIGENFILE",
+            "KEEPORBIT", "USEORBIT",
+            "COUPLE", "EXACT",
+            "RIPKEN", "TAPERING"
+        ]),
+        # elements ---------------------------------------------------------------------------------
+        'rbend': make_element([
+            "L", "ANGLE", "TILT",
+            "K[012]S?", "E[12]", "FINTX?",
+            "HGAP", "H[12]", "THICK", "ADD_ANGLE", "KILL_ENT_FRINGE"
+        ]),
+        'sbend': make_element([
+            "L", "ANGLE", "TILT",
+            "K[01]S?", "E[12]", "FINTX?",
+            "HGAP", "H[12]", "THICK", "KILL_ENT_FRINGE"
+        ]),
+        'drift': make_element([
+            "L"
+        ]),
+        'dipedge': make_element([
+            "H", "E1", "FINT", "HGAP", "TILT"
+        ]),
+        'quadrupole': make_element([
+            "L", "K1S?", "TILT", "THICK"
+        ]),
+        'sextupole': make_element([
+            "L", "K2S?", "TILT"
+        ]),
+        'octupole': make_element([
+            "L", "K3S?", "TILT"
+        ]),
+        'multipole': make_element([
+            "LRAD", "K[NS]L", "TILT"
+        ]),
+        'solenoid': make_element([
+            "L", "KSI?"
+        ]),
+        'nllens': make_element([
+            "[KC]NLL"
+        ]),
+        'hvkicker': make_element([
+            "L", "TILT",
+            #"(?>SIN)?KICK",
+            #"SIN(?>TUNE|PEAK|PHASE)"
+            "SINKICK", "KICK", "SINTUNE", "SINPEAK", "SINPHASE"
+        ]),
+        'kicker': make_element([
+            "L", "[HV]KICK", "TILT"
+        ]),
+        'rfcavity': make_element([
+            "L", "VOLT", "LAG", "FREQ", "HARMON", "N_BESSEL", "NO_CAVITY_TOTALPATH"
+        ]),
+        'twcavity': make_element([
+            "L", "VOLT", "LAG", "FREQ", "PSI", "DELTA_LAG"
+        ]),
+        'crabcavity': make_element([
+            "L", "VOLT", "LAG", "FREQ", "HARMON",
+            "RV[1234]", "RPH[12]", "LAGF"
+        ]),
+        'hvacdipole': make_element([
+            "L", "VOLT", "LAG", "FREQ"
+            "RAMP[1234]"
+        ]),
+        'rfmultipole': make_element([
+            "L", "VOLT", "LAG", "FREQ", "HARMON",
+            "LRAD", "TILT",
+            "[KP][NS]L"
+        ]),
+        'save_state': make_element([
+            "SEQUENCE", "FILE", "BEAM", "FOLDER", "CSAVE"
+        ]),
+        'elseparator': make_element([
+            "L", "E[XY]", "TILT"
+        ]),
+        'monitor': make_element([
+            "L"
+        ]),
+        'collimator': make_element([
+            "L",
+            #"APER(?>_(?>OFFSET|TOL)|(?>URE|YPE))"
+            "APERTURE", "APEROFFSET", "APERTOL", "APTERTYPE"
+        ]),
+        'ercollimator': make_element([
+            "L", "[XY]SIZE"
+        ]),
+        'beambeam': make_element([
+            "CHARGE", "[XY]MA", "SIG[XY]", "WIDTH",
+            #"BB(?>SHAPE|DIR)"
+            "BBSHAPE", "BBDIR"
+        ]),
+        'matrix': make_element([
+            "TYPE", "L", "KICK[1-6]", "RM[1-6][1-6]", "TM[1-6][1-6][1-6]"
+        ]),
+        'rotation': make_element([
+            "ANGLE"
+        ]),
+        'translation': make_element([
+            "D[XYS]"
         ]),
     }
